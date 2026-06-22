@@ -1,0 +1,32 @@
+# --- Entornos virtuales (regenerables) ---
+venv/
+.venv/
+env/
+
+# --- Cachés de Python / notebooks ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.ipynb_checkpoints/
+
+# --- Datos pesados / generados (NO versionar) ---
+# patches, augmented, preprocessed, segmented... se regeneran desde los scripts.
+# Si quieres versionar SOLO las imágenes originales, comenta la línea de abajo
+# e ignora únicamente las subcarpetas generadas:
+#   dataset/patches/  dataset/augmented/  dataset/preprocessed_augmented/
+#   dataset/raw_corrected/  dataset/segmented_augmented/
+dataset/
+
+# --- Modelos binarios grandes (.joblib ~300 MB) ---
+models/*.joblib
+
+# --- Logs y temporales ---
+*.log
+
+# --- IDE / OS ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Se MANTIENEN versionados: *.py, *.ipynb, *.md (código, análisis y documentación).
