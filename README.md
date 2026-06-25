@@ -9,12 +9,17 @@ El proyecto se ha orientado a la construcción de un **dataset de micrografías 
 - análisis por textura,
 - y reconstrucción de la imagen original a partir de sus partes.
 
-Hasta este punto, el flujo de trabajo ya contempla:
+El flujo de trabajo está implementado como un *pipeline* de cinco etapas (cuatro scripts
++ un cuaderno de análisis):
 
-1. organización de imágenes originales por escala o aumento,
-2. generación de *patches* o fragmentos,
-3. trazabilidad completa entre cada parche y su imagen de origen,
-4. y **data augmentation geométrico** sobre los parches generados.
+1. **corrección de artefactos** (`image_corrector.py`): elimina barra de escala y texto rojo,
+2. **fragmentación en patches** (`image_chunker.py`): genera parches 256×256 con solapamiento,
+3. **data augmentation geométrico** (`image_augmentator.py`): 5 transformaciones por parche,
+4. **preprocesado y segmentación clásica** (`image_preprocess.py`): marca huecos y austenita,
+5. **clustering no supervisado** (`EDA_analisys.ipynb`): separa bainita y martensita.
+
+En todas las etapas se conserva **trazabilidad completa** entre cada parche y su imagen de
+origen mediante metadatos en CSV/JSON.
 
 ---
 
@@ -36,64 +41,53 @@ La estructura actual del proyecto puede resumirse así:
 
 ```text
 dataset/
-├── raw/
-│   ├── scale_25um/
-│   │   ├── MET0001.TIF
-│   │   ├── MET0002.TIF
-│   │   └── ...
-│   ├── scale_500um/
-│   │   ├── MET0001.TIF
-│   │   ├── MET0002.TIF
-│   │   └── ...
-│   └── ...
+├── raw/                       # 17 micrografías TIF originales, por escala
+│   ├── scale_25um/  (MET0013..MET0017)
+│   ├── scale_50um/  (MET0009..MET0012)
+│   ├── scale_100um/ (MET0006..MET0008)
+│   ├── scale_250um/ (MET0003..MET0005)
+│   └── scale_500um/ (MET0001..MET0002)
 │
-├── patches/
+├── raw_corrected/             # imágenes con barra de escala y texto rojo eliminados
+│   └── (misma estructura por escala que raw/)
+│
+├── patches/                   # 1.071 parches 256×256 (extraídos de raw_corrected/)
 │   ├── images/
-│   │   ├── scale_25um/
-│   │   │   ├── MET0001/
-│   │   │   │   ├── MET0001_scale_25um_y0000_x0000.png
-│   │   │   │   ├── MET0001_scale_25um_y0000_x0128.png
-│   │   │   │   └── ...
-│   │   │   ├── MET0002/
-│   │   │   │   └── ...
-│   │   ├── scale_500um/
-│   │   │   ├── MET0001/
-│   │   │   └── ...
-│   │   └── ...
-│   │
+│   │   └── scale_XXXum/<image_id>/<image_id>_scale_XXXum_yYYYY_xXXXX.png
 │   └── metadata/
 │       ├── patches.csv
 │       └── patches.json
 │
-├── augmented/
+├── augmented/                 # 5.355 parches = 1.071 × 5 augmentaciones geométricas
 │   ├── images/
-│   │   ├── scale_25um/
-│   │   │   ├── MET0001/
-│   │   │   │   ├── MET0001_scale_25um_y0000_x0000_rot90.png
-│   │   │   │   ├── MET0001_scale_25um_y0000_x0000_rot180.png
-│   │   │   │   ├── MET0001_scale_25um_y0000_x0000_rot270.png
-│   │   │   │   ├── MET0001_scale_25um_y0000_x0000_flip_h.png
-│   │   │   │   ├── MET0001_scale_25um_y0000_x0000_flip_v.png
-│   │   │   │   └── ...
-│   │   │   ├── MET0002/
-│   │   │   │   └── ...
-│   │   ├── scale_500um/
-│   │   │   ├── MET0001/
-│   │   │   └── ...
-│   │   └── ...
-│   │
+│   │   └── scale_XXXum/<image_id>/<patch_id>_{rot90,rot180,rot270,flip_h,flip_v}.png
 │   └── metadata/
 │       ├── augmented_patches.csv
 │       └── augmented_patches.json
 │
-└── splits/
+├── preprocessed_augmented/    # 5.355 parches con huecos/austenita marcados + ecualización V
+│   ├── images/
+│   │   └── scale_XXXum/<image_id>/...
+│   └── metadata/
+│       ├── preprocessed.csv
+│       └── preprocessed.json
+│
+├── segmented_augmented/       # salida del clustering (4 clases)
+│   ├── labels/                # mapa de etiquetas uint8 (1 hueco, 2 austenita, 3 bainita, 4 martensita)
+│   └── color/                 # visualización en color
+│
+└── splits/                    # (previsto, AÚN NO generado)
     ├── train.csv
     ├── val.csv
     └── test.csv
+
+models/                        # artefactos del clustering
+├── kmeans_bainite_martensite.joblib
+└── scaler_rgb_hsv.joblib
 ```
 
-> **Nota:** la carpeta `splits/` representa la organización recomendada para las particiones del dataset.  
-> Si aún no se ha generado, sigue siendo parte de la estructura prevista del proyecto.
+> **Nota:** la carpeta `splits/` representa la organización prevista para las particiones del
+> dataset, pero **aún no se ha generado**. El resto de carpetas existen y están pobladas.
 
 ---
 
@@ -122,7 +116,9 @@ Las imágenes pueden compartir nombres como `MET0001.TIF`, pero eso no genera co
 
 ## 2. Carpeta `patches/`: dataset base fragmentado
 
-Esta carpeta contiene los **parches originales** generados a partir de cada imagen.
+Esta carpeta contiene los **parches base** generados a partir de cada imagen ya **corregida**
+(es decir, desde `raw_corrected/`, no desde `raw/`). En total se generan **1.071 parches**
+(17 imágenes × 63 parches por imagen).
 
 ### Decisión tomada
 
@@ -277,7 +273,18 @@ Estos elementos pueden convertirse en **artefactos aprendibles** para un modelo,
 - el modelo podría aprender la presencia del texto o la barra,
 - en lugar de aprender realmente la microestructura.
 
-Se deberían eliminar, sin embargo, no se ha aplicado una forma hasta el momento que lo haga correctamente.
+### Solución implementada (`image_corrector.py`)
+
+Esta limpieza **sí está implementada** y se ejecuta como **primera etapa** del pipeline,
+generando la carpeta `raw_corrected/`. El procedimiento combina dos criterios de detección:
+
+- **outliers de color**: píxeles cuya distancia euclídea al color medio de la imagen supera
+  el **percentil 99,5**,
+- **rojo en HSV**: dos rangos de matiz (`[0,10]` y `[160,180]`, con `S≥100` y `V≥50`).
+
+Sobre la máscara de rojo se aplica un **inpaint por mediana** de los vecinos válidos (radio de
+búsqueda creciente hasta 7 píxeles), reconstruyendo la microestructura subyacente sin
+introducir bordes artificiales.
 
 ---
 
@@ -418,27 +425,28 @@ Si parches vecinos de una misma imagen caen en conjuntos diferentes, el modelo v
 
 Hasta este punto, el proyecto ya cuenta con:
 
-- imágenes originales organizadas por escala,
-- lógica de extracción de patches,
-- padding automático para cobertura completa,
+- imágenes originales organizadas por escala (17 micrografías),
+- **corrección de barra de escala y texto rojo** (`raw_corrected/`),
+- extracción de parches con padding automático (1.071 parches),
 - encarpetado por imagen dentro de cada escala,
-- metadata de patches,
-- estrategia para remover barras de escala,
-- augmentation geométrico,
-- metadata del augmentation,
-- y una estructura preparada para futuros splits y reconstrucción.
+- metadata de patches, augmentation y preprocesado,
+- **augmentation geométrico** (5.355 parches),
+- **preprocesado y segmentación clásica** de huecos y austenita (`preprocessed_augmented/`),
+- **clustering no supervisado** de bainita y martensita, con modelos persistidos en `models/`,
+- segmentación final en 4 clases para todo el dataset (`segmented_augmented/`).
 
 ---
 
 ## 14. Próximos pasos naturales
 
-Con la estructura actual, los siguientes pasos recomendados serían:
+Con el pipeline actual (que ya llega hasta la segmentación en 4 clases), los siguientes pasos
+recomendados serían:
 
-1. generar formalmente `train.csv`, `val.csv` y `test.csv` por imagen original,
-2. aplicar augmentation solo sobre `train`,
-3. incorporar máscaras cuando exista una estrategia de segmentación válida,
-4. entrenar modelo de segmentación o clasificación,
-5. y reconstruir la imagen completa a partir de las predicciones sobre parches.
+1. generar formalmente `train.csv`, `val.csv` y `test.csv` **por imagen original** (aún no hecho),
+2. cuantificar las **fracciones de área por fase** en cada parche,
+3. **reconstruir la micrografía completa** a partir de los metadatos de posición de los parches,
+4. validar el modelo (coherencia espacial, estabilidad ante augmentation, consistencia entre escalas),
+5. y, opcionalmente, entrenar un modelo supervisado de segmentación usando estas etiquetas como base.
 
 ---
 

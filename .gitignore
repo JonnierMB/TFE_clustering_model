@@ -15,7 +15,11 @@ __pycache__/
 # e ignora únicamente las subcarpetas generadas:
 #   dataset/patches/  dataset/augmented/  dataset/preprocessed_augmented/
 #   dataset/raw_corrected/  dataset/segmented_augmented/
-dataset/
+dataset/augmented/
+dataset/patches/
+dataset/preprocessed_augmented/
+dataset/raw_corrected/
+dataset/segmented_augmented/
 
 # --- Modelos binarios grandes (.joblib ~300 MB) ---
 models/*.joblib
